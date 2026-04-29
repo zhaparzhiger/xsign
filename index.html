@@ -390,23 +390,62 @@
 
         // Core AI Logic & Voice Mapping
         const LOGIC_MAP = {
-            "Open_Palm": { chat: "Здравствуйте!", voice: "Здравствуйте, уважаемые судьи!", anim: "Wave" },
-            "Thumb_Up": { chat: "Принято", voice: "Система подтверждает действие.", anim: "ThumbsUp" },
-            "Victory": { chat: "Успех!", voice: "Задача выполнена успешно.", anim: "Jump" },
-            "ILoveYou": { chat: "Инклюзия", voice: "Мы поддерживаем инклюзивную среду.", anim: "Dance" }
+            "Open_Palm": { chat: "Здравствуйте!", voice: "Приветствую вас.", anim: "Wave" },
+            "OK_Sign": { chat: "Да", voice: "Да, я подтверждаю.", anim: "Yes" },
+            "Thumb_Down": { chat: "Нет", voice: "Нет, я не согласен.", anim: "No" },
+            "Thumb_Up": { chat: "Отлично", voice: "Супер, отлично!", anim: "ThumbsUp" },
+            "Victory": { chat: "Мир", voice: "Всё будет хорошо.", anim: "Jump" },
+            "ILoveYou": { chat: "Инклюзия", voice: "Мы за инклюзивную среду.", anim: "Dance" },
+            "Closed_Fist": { chat: "Стоп", voice: "Подождите, стоп.", anim: "Idle" },
+            "Pointing_Up": { chat: "Внимание", voice: "Обратите внимание.", anim: "Idle" }
         };
 
         // Manual Backup Overrides
         const MANUAL_MAP = {
             "1": "Open_Palm",
-            "2": "Thumb_Up",
-            "3": "Victory"
+            "2": "OK_Sign",
+            "3": "Thumb_Down",
+            "4": "Thumb_Up",
+            "5": "Closed_Fist",
+            "6": "Pointing_Up"
         };
 
         // State
         let currentGesture = "None";
         let gestureStartTime = 0;
         let lastTriggeredGesture = "None";
+
+        // Helpers for Custom Gestures
+        function getDistance(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2) + Math.pow(p1.z - p2.z, 2));
+        }
+
+        function isFingerExtended(landmarks, tipIdx, pipIdx) {
+            const wrist = landmarks[0];
+            const tip = landmarks[tipIdx];
+            const pip = landmarks[pipIdx];
+            return getDistance(wrist, tip) > getDistance(wrist, pip) * 1.2;
+        }
+
+        function getCustomGesture(landmarks) {
+            if (!landmarks) return null;
+            
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            
+            // "OK" Sign
+            const okDist = getDistance(thumbTip, indexTip);
+            const middleExt = isFingerExtended(landmarks, 12, 10);
+            const ringExt = isFingerExtended(landmarks, 16, 14);
+            const pinkyExt = isFingerExtended(landmarks, 20, 18);
+
+            // Thumb and index touching, other 3 extended
+            if (okDist < 0.08 && middleExt && ringExt && pinkyExt) {
+                return "OK_Sign";
+            }
+
+            return null;
+        }
 
         // Web Speech API (Text-to-Speech)
         const synth = window.speechSynthesis;
@@ -430,7 +469,7 @@
                         delegate: "GPU" // Zero-lag Demo Requirement
                     },
                     runningMode: "VIDEO",
-                    numHands: 1
+                    numHands: 2
                 });
 
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
@@ -483,9 +522,25 @@
                 }
 
                 // Gesture Interpretation Logic
-                if (results.gestures && results.gestures.length > 0) {
-                    const gestureName = results.gestures[0][0].categoryName;
-                    const score = results.gestures[0][0].score;
+                if (results.landmarks && results.landmarks.length > 0) {
+                    let gestureName = "None";
+                    let score = 0;
+
+                    // 1. Try Custom Heuristics on any hand
+                    for (let i = 0; i < results.landmarks.length; i++) {
+                        const custom = getCustomGesture(results.landmarks[i]);
+                        if (custom) {
+                            gestureName = custom;
+                            score = 1.0;
+                            break;
+                        }
+                    }
+
+                    // 2. Fallback to default MediaPipe model
+                    if (gestureName === "None" && results.gestures && results.gestures.length > 0) {
+                        gestureName = results.gestures[0][0].categoryName;
+                        score = results.gestures[0][0].score;
+                    }
 
                     if (score > 0.65 && LOGIC_MAP[gestureName]) {
                         if (gestureName !== currentGesture) {
