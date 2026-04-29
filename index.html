@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XSign - Neural Interpreter</title>
+    <!-- Minimalist Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Model Viewer -->
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.1.1/model-viewer.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f3f4f6;
+            --chat-bg: #ffffff;
+            --text-main: #111827;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+            --accent-color: #2563eb;
+            --accent-hover: #1d4ed8;
+            --msg-system: #f3f4f6;
+            --msg-user: #2563eb;
+            --msg-user-text: #ffffff;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #111827;
+                --chat-bg: #1f2937;
+                --text-main: #f9fafb;
+                --text-muted: #9ca3af;
+                --border-color: #374151;
+                --accent-color: #3b82f6;
+                --accent-hover: #60a5fa;
+                --msg-system: #374151;
+                --msg-user: #3b82f6;
+                --msg-user-text: #ffffff;
+            }
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            width: 100%;
+            max-width: 1200px;
+            height: 100vh;
+            background: var(--chat-bg);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
+        
+        @media (min-width: 768px) {
+            .app-container {
+                height: 90vh;
+                border-radius: 16px;
+                overflow: hidden;
+                border: 1px solid var(--border-color);
+            }
+        }
+
+        /* --- SIDEBAR --- */
+        .sidebar {
+            width: 320px;
+            background: var(--chat-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .brand-header {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background-color: #10b981;
+            border-radius: 50%;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+        }
+
+        .media-box {
+            background: var(--bg-color);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid var(--border-color);
+            aspect-ratio: 4/3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .media-box-title {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 20;
+            backdrop-filter: blur(4px);
+        }
+
+        #webcam {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            z-index: 1;
+        }
+
+        #output_canvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            z-index: 10;
+        }
+
+        model-viewer {
+            width: 100%;
+            height: 100%;
+            background-color: transparent;
+        }
+
+        /* --- CHAT AREA --- */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--chat-bg);
+        }
+
+        .chat-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .chat-header-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header-title {
+            font-size: 18px;
+        }
+
+        .chat-header-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .chat-history {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .msg {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 15px;
+            line-height: 1.4;
+            animation: fadeIn 0.3s ease-out forwards;
+            background: var(--msg-system);
+            color: var(--text-main);
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .msg.user {
+            background: var(--msg-user);
+            color: var(--msg-user-text);
+            align-self: flex-end;
+            border-bottom-left-radius: 16px;
+            border-bottom-right-radius: 4px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-input-area {
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: center;
+        }
+
+        .btn-mic {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            max-width: 400px;
+            padding: 14px 24px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-mic:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-mic.recording {
+            background: #ef4444;
+            animation: pulseRecord 1.5s infinite;
+        }
+
+        .btn-mic svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        @keyframes pulseRecord {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        /* Loading Screen */
+        #loadingOverlay {
+            position: fixed; inset: 0; z-index: 100;
+            background: var(--bg-color);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+        }
+        
+        .loading-spinner {
+            width: 40px; height: 40px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-text {
+            color: var(--text-main);
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 20px;
+        }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .app-container {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                flex-direction: row;
+                padding: 15px;
+                gap: 15px;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+                overflow-x: auto;
+            }
+            .brand-header {
+                display: none;
+            }
+            .media-box {
+                flex: 0 0 140px;
+                height: 100px;
+                aspect-ratio: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Screen -->
+    <div id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Загрузка XSign...</div>
+    </div>
+
+    <div class="app-container">
+        
+        <!-- Sidebar for Vision & Avatar -->
+        <aside class="sidebar">
+            <div class="brand-header">
+                <div class="status-dot"></div>
+                XSign AI
+            </div>
+            
+            <div class="media-box">
+                <div class="media-box-title">Камера</div>
+                <video id="webcam" autoplay playsinline></video>
+                <canvas id="output_canvas"></canvas>
+            </div>
+
+            <div class="media-box">
+                <div class="media-box-title">Аватар</div>
+                <model-viewer id="robotModel" 
+                    src="https://modelviewer.dev/shared-assets/models/RobotExpressive.glb" 
+                    autoplay 
+                    animation-name="Idle" 
+                    camera-controls 
+                    shadow-intensity="1">
+                </model-viewer>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <header class="chat-header">
+                <div class="chat-header-info">
+                    <div class="chat-header-title">Ассистент XSign</div>
+                    <div class="chat-header-subtitle">Нейронный переводчик онлайн</div>
+                </div>
+            </header>
+
+            <div class="chat-history" id="chatHistory">
+                <div class="msg" style="align-self: center; background: transparent; color: var(--text-muted); font-size: 13px;">
+                    Система готова. Используйте [1,2,3] для ручного управления.
+                </div>
+            </div>
+
+            <footer class="chat-input-area">
+                <button class="btn-mic" id="micBtn">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                    <span>Слушать голос</span>
+                </button>
+            </footer>
+        </main>
+
+    </div>
+
+    <script type="module">
+        import {
+            GestureRecognizer,
+            FilesetResolver,
+            DrawingUtils
+        } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
+        const video = document.getElementById("webcam");
+        const canvasElement = document.getElementById("output_canvas");
+        const canvasCtx = canvasElement.getContext("2d");
+        const loadingOverlay = document.getElementById("loadingOverlay");
+        const robotModel = document.getElementById("robotModel");
+        const chatHistory = document.getElementById("chatHistory");
+        const micBtn = document.getElementById("micBtn");
+
+        let gestureRecognizer;
+        let webcamRunning = false;
+        let lastVideoTime = -1;
+
+        // Core AI Logic & Voice Mapping
+        const LOGIC_MAP = {
+            "Open_Palm": { chat: "Здравствуйте!", voice: "Здравствуйте, уважаемые судьи!", anim: "Wave" },
+            "Thumb_Up": { chat: "Принято", voice: "Система подтверждает действие.", anim: "ThumbsUp" },
+            "Victory": { chat: "Успех!", voice: "Задача выполнена успешно.", anim: "Jump" },
+            "ILoveYou": { chat: "Инклюзия", voice: "Мы поддерживаем инклюзивную среду.", anim: "Dance" }
+        };
+
+        // Manual Backup Overrides
+        const MANUAL_MAP = {
+            "1": "Open_Palm",
+            "2": "Thumb_Up",
+            "3": "Victory"
+        };
+
+        // State
+        let currentGesture = "None";
+        let gestureStartTime = 0;
+        let lastTriggeredGesture = "None";
+
+        // Web Speech API (Text-to-Speech)
+        const synth = window.speechSynthesis;
+        function speak(text) {
+            if (synth.speaking) synth.cancel(); // Stop current speech if any
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = "ru-RU";
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            synth.speak(utterance);
+        }
+
+        async function init() {
+            try {
+                const vision = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+                );
+                gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+                        delegate: "GPU" // Zero-lag Demo Requirement
+                    },
+                    runningMode: "VIDEO",
+                    numHands: 1
+                });
+
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+                video.srcObject = stream;
+                
+                video.addEventListener("loadeddata", () => {
+                    loadingOverlay.style.opacity = "0";
+                    setTimeout(() => loadingOverlay.style.display = "none", 500);
+                    webcamRunning = true;
+                    predictWebcam();
+                });
+            } catch (err) {
+                loadingOverlay.innerHTML = `<div class="loading-text" style="color:red; text-align: center; padding: 20px;">ОШИБКА: ${err.message}</div>`;
+            }
+        }
+
+        function predictWebcam() {
+            canvasElement.width = video.videoWidth;
+            canvasElement.height = video.videoHeight;
+
+            let startTimeMs = performance.now();
+            
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                
+                const results = gestureRecognizer.recognizeForVideo(video, startTimeMs);
+
+                canvasCtx.save();
+                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+                if (results.landmarks && results.landmarks.length > 0) {
+                    const drawingUtils = new DrawingUtils(canvasCtx);
+                    for (const landmarks of results.landmarks) {
+                        
+                        // Using accent color for drawing
+                        const computedStyle = getComputedStyle(document.body);
+                        const accentColor = computedStyle.getPropertyValue('--accent-color').trim() || '#2563eb';
+                        
+                        drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, {
+                            color: accentColor, 
+                            lineWidth: 5
+                        });
+                        
+                        drawingUtils.drawLandmarks(landmarks, {
+                            color: "#ffffff", 
+                            lineWidth: 2,
+                            radius: 4
+                        });
+                    }
+                }
+
+                // Gesture Interpretation Logic
+                if (results.gestures && results.gestures.length > 0) {
+                    const gestureName = results.gestures[0][0].categoryName;
+                    const score = results.gestures[0][0].score;
+
+                    if (score > 0.65 && LOGIC_MAP[gestureName]) {
+                        if (gestureName !== currentGesture) {
+                            currentGesture = gestureName;
+                            gestureStartTime = startTimeMs;
+                        } else {
+                            // Hold threshold: 800ms
+                            if (startTimeMs - gestureStartTime > 800) { 
+                                if (lastTriggeredGesture !== gestureName) {
+                                    lastTriggeredGesture = gestureName;
+                                    triggerAction(LOGIC_MAP[gestureName]);
+
+                                    // Cooldown
+                                    setTimeout(() => {
+                                        if (lastTriggeredGesture === gestureName) {
+                                            lastTriggeredGesture = "None";
+                                            currentGesture = "None";
+                                        }
+                                    }, 4000); // 4 seconds delay before repeating same sign
+                                }
+                            }
+                        }
+                    } else {
+                        currentGesture = "None";
+                    }
+                } else {
+                    currentGesture = "None";
+                }
+                
+                canvasCtx.restore();
+            }
+
+            if (webcamRunning) {
+                window.requestAnimationFrame(predictWebcam);
+            }
+        }
+
+        function triggerAction(actionObj) {
+            // Chat
+            const div = document.createElement('div');
+            div.className = 'msg';
+            div.innerText = actionObj.chat; // Removed "> "
+            chatHistory.appendChild(div);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+
+            // Audio Voice
+            if (actionObj.voice) speak(actionObj.voice);
+
+            // 3D Animation
+            if (actionObj.anim) {
+                robotModel.setAttribute('animation-name', actionObj.anim);
+                setTimeout(() => {
+                    robotModel.setAttribute('animation-name', 'Idle');
+                }, 3500); // Back to idle
+            }
+        }
+
+        // Manual Backup Overrides (Keys 1, 2, 3)
+        document.addEventListener('keydown', (e) => {
+            if (MANUAL_MAP[e.key]) {
+                const gesture = MANUAL_MAP[e.key];
+                triggerAction(LOGIC_MAP[gesture]);
+            }
+        });
+
+        // VOICE-TO-SIGN Interactive (webkitSpeechRecognition)
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+
+        const micIcon = `<svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>`;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'ru-RU';
+            recognition.interimResults = false;
+
+            recognition.onstart = () => {
+                micBtn.classList.add('recording');
+                micBtn.innerHTML = micIcon + "<span>Слушаю...</span>";
+            };
+
+            recognition.onresult = (e) => {
+                const transcript = e.results[0][0].transcript.toLowerCase();
+                
+                // Add user speech to chat
+                const div = document.createElement('div');
+                div.className = 'msg user';
+                div.innerText = transcript; // Removed "[ Вы ]: "
+                chatHistory.appendChild(div);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+
+                // Interactive check
+                if (transcript.includes("привет") || transcript.includes("здравствуйте") || transcript.includes("добрый")) {
+                    setTimeout(() => {
+                        triggerAction({
+                            chat: "Аватар отвечает на приветствие",
+                            voice: null, // Don't voice over
+                            anim: "Wave"
+                        });
+                    }, 500);
+                }
+            };
+
+            recognition.onerror = (e) => {
+                console.error("Speech Rec Error:", e);
+                micBtn.classList.remove('recording');
+                micBtn.innerHTML = micIcon + "<span>Слушать голос</span>";
+            };
+
+            recognition.onend = () => {
+                micBtn.classList.remove('recording');
+                micBtn.innerHTML = micIcon + "<span>Слушать голос</span>";
+            };
+        }
+
+        micBtn.addEventListener("click", () => {
+            if (recognition) {
+                try {
+                    recognition.start();
+                } catch(err) {
+                    console.log("Recognition already started or error");
+                }
+            } else {
+                // Fallback Mock
+                const div = document.createElement('div');
+                div.className = 'msg user';
+                div.innerText = "Привет (тест)";
+                chatHistory.appendChild(div);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+                
+                setTimeout(() => {
+                    triggerAction({
+                        chat: "Аватар отвечает на приветствие",
+                        voice: null,
+                        anim: "Wave"
+                    });
+                }, 500);
+            }
+        });
+
+        // Initialize App
+        init();
+    </script>
+</body>
+</html>
