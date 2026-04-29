@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XSign - Режим по буквам</title>
+    <!-- Minimalist Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #f3f4f6;
+            --chat-bg: #ffffff;
+            --text-main: #111827;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+            --accent-color: #10b981; /* Зеленый акцент для режима букв */
+            --accent-hover: #059669;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #111827;
+                --chat-bg: #1f2937;
+                --text-main: #f9fafb;
+                --text-muted: #9ca3af;
+                --border-color: #374151;
+                --accent-color: #10b981;
+                --accent-hover: #059669;
+            }
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            width: 100%;
+            max-width: 1200px;
+            height: 100vh;
+            background: var(--chat-bg);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
+        
+        @media (min-width: 768px) {
+            .app-container {
+                height: 90vh;
+                border-radius: 16px;
+                overflow: hidden;
+                border: 1px solid var(--border-color);
+            }
+        }
+
+        .sidebar {
+            width: 400px;
+            background: var(--chat-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .brand-header {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background-color: var(--accent-color);
+            border-radius: 50%;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .btn-nav {
+            padding: 8px 12px;
+            background: var(--bg-color);
+            color: var(--text-main);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            border: 1px solid var(--border-color);
+            transition: all 0.2s;
+        }
+        .btn-nav:hover {
+            background: #e5e7eb;
+            color: #000;
+        }
+
+        .media-box {
+            background: var(--bg-color);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid var(--border-color);
+            aspect-ratio: 4/3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .media-box-title {
+            position: absolute;
+            top: 8px; left: 8px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 20;
+            backdrop-filter: blur(4px);
+        }
+
+        #webcam, #output_canvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        #output_canvas { z-index: 10; }
+
+        .controls-box {
+            background: var(--bg-color);
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* Main Workspace */
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 40px;
+            gap: 20px;
+        }
+
+        .workspace-header {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .current-letter-display {
+            font-size: 120px;
+            font-weight: 700;
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            background: var(--bg-color);
+            border-radius: 20px;
+            border: 2px dashed var(--border-color);
+            transition: all 0.3s;
+        }
+
+        .current-letter-display.active {
+            border-color: var(--accent-color);
+            background: rgba(16, 185, 129, 0.05);
+            transform: scale(1.02);
+        }
+
+        .word-output {
+            font-size: 32px;
+            font-weight: 600;
+            padding: 20px;
+            min-height: 80px;
+            background: var(--bg-color);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            letter-spacing: 2px;
+            display: flex;
+            align-items: center;
+            word-break: break-all;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-action {
+            flex: 1;
+            padding: 14px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-action.secondary {
+            background: var(--border-color);
+            color: var(--text-main);
+        }
+        .btn-action:hover { opacity: 0.9; }
+
+        #loadingOverlay {
+            position: fixed; inset: 0; z-index: 100;
+            background: var(--bg-color);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+        }
+        .loading-spinner {
+            width: 40px; height: 40px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div style="margin-top: 20px; font-weight: 500;">Инициализация Буквенного Режима...</div>
+    </div>
+
+    <div class="app-container">
+        
+        <aside class="sidebar">
+            <div class="brand-header">
+                <div>
+                    <div class="status-dot"></div>
+                    Режим Букв
+                </div>
+                <a href="index.html" class="btn-nav">В режим фраз ➔</a>
+            </div>
+            
+            <div class="media-box">
+                <div class="media-box-title">Камера</div>
+                <video id="webcam" autoplay playsinline></video>
+                <canvas id="output_canvas"></canvas>
+            </div>
+
+            <div class="controls-box">
+                <strong>Доступные жесты (Тестовые):</strong><br>
+                ✊ Кулак = <b>А</b><br>
+                ✋ Открытая ладонь = <b>В</b><br>
+                ✌️ Виктория (V) = <b>Л</b><br>
+                👌 Окей = <b>О</b><br>
+                🤟 Я тебя люблю = <b>У</b><br>
+                👍 Палец вверх = <b>К</b><br>
+                👎 Палец вниз = <b>Н</b><br>
+                ☝️ Указательный вверх = <b>П</b><br>
+                <i>Жест должен удерживаться 1 секунду для ввода.</i>
+            </div>
+        </aside>
+
+        <main class="workspace">
+            <div class="workspace-header">Сборка слова</div>
+            
+            <div class="current-letter-display" id="currentLetter">-</div>
+            
+            <div class="word-output" id="wordOutput"></div>
+
+            <div class="action-buttons">
+                <button class="btn-action secondary" onclick="addSpace()">Пробел</button>
+                <button class="btn-action secondary" onclick="backspace()">Удалить (Del)</button>
+                <button class="btn-action" onclick="speakWord()">Озвучить слово 🔊</button>
+                <button class="btn-action secondary" onclick="clearWord()" style="background: #ef4444; color: white;">Очистить</button>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        import {
+            GestureRecognizer,
+            FilesetResolver,
+            DrawingUtils
+        } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
+        const video = document.getElementById("webcam");
+        const canvasElement = document.getElementById("output_canvas");
+        const canvasCtx = canvasElement.getContext("2d");
+        const loadingOverlay = document.getElementById("loadingOverlay");
+        
+        const currentLetterUI = document.getElementById("currentLetter");
+        const wordOutputUI = document.getElementById("wordOutput");
+
+        let gestureRecognizer;
+        let webcamRunning = false;
+        let lastVideoTime = -1;
+
+        // Карта жестов в буквы
+        const LETTER_MAP = {
+            "Closed_Fist": "А",
+            "Open_Palm": "В",
+            "Victory": "Л",
+            "OK_Sign": "О",
+            "ILoveYou": "У",
+            "Thumb_Up": "К",
+            "Thumb_Down": "Н",
+            "Pointing_Up": "П"
+        };
+
+        let currentGesture = "None";
+        let gestureStartTime = 0;
+        let lastTriggeredGesture = "None";
+        
+        let accumulatedWord = "";
+
+        // Custom helpers
+        function getDistance(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2) + Math.pow(p1.z - p2.z, 2));
+        }
+        function isFingerExtended(landmarks, tipIdx, pipIdx) {
+            return getDistance(landmarks[0], landmarks[tipIdx]) > getDistance(landmarks[0], landmarks[pipIdx]) * 1.05;
+        }
+        function getCustomGesture(landmarks) {
+            if (!landmarks) return null;
+            const okDist = getDistance(landmarks[4], landmarks[8]);
+            const middleExt = isFingerExtended(landmarks, 12, 10);
+            const ringExt = isFingerExtended(landmarks, 16, 14);
+            const pinkyExt = isFingerExtended(landmarks, 20, 18);
+            if (okDist < 0.08 && middleExt && ringExt && pinkyExt) {
+                return "OK_Sign";
+            }
+            return null;
+        }
+
+        // Синтез речи
+        const synth = window.speechSynthesis;
+        window.speakWord = () => {
+            if (!accumulatedWord) return;
+            if (synth.speaking) synth.cancel();
+            const utterance = new SpeechSynthesisUtterance(accumulatedWord);
+            utterance.lang = "ru-RU";
+            
+            const voices = synth.getVoices();
+            const maleVoice = voices.find(v => v.lang.includes('ru') && (v.name.toLowerCase().includes('pavel') || v.name.toLowerCase().includes('male'))) || voices.find(v => v.lang.includes('ru'));
+            if (maleVoice) utterance.voice = maleVoice;
+            utterance.pitch = (maleVoice && maleVoice.name.toLowerCase().includes('pavel')) ? 1.0 : 0.6;
+            
+            synth.speak(utterance);
+        };
+
+        window.addSpace = () => { accumulatedWord += " "; updateUI(); };
+        window.backspace = () => { accumulatedWord = accumulatedWord.slice(0, -1); updateUI(); };
+        window.clearWord = () => { accumulatedWord = ""; updateUI(); };
+
+        function updateUI() {
+            wordOutputUI.innerText = accumulatedWord;
+        }
+
+        function triggerLetter(letter) {
+            accumulatedWord += letter;
+            updateUI();
+            
+            currentLetterUI.innerText = letter;
+            currentLetterUI.classList.add("active");
+            
+            setTimeout(() => {
+                currentLetterUI.classList.remove("active");
+            }, 300);
+        }
+
+        async function init() {
+            try {
+                const vision = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+                );
+                gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+                        delegate: "GPU"
+                    },
+                    runningMode: "VIDEO",
+                    numHands: 2
+                });
+
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+                video.srcObject = stream;
+                
+                video.addEventListener("loadeddata", () => {
+                    loadingOverlay.style.display = "none";
+                    webcamRunning = true;
+                    predictWebcam();
+                });
+            } catch (err) {
+                loadingOverlay.innerHTML = `<div style="color:red; padding: 20px;">ОШИБКА: ${err.message}</div>`;
+            }
+        }
+
+        function predictWebcam() {
+            canvasElement.width = video.videoWidth;
+            canvasElement.height = video.videoHeight;
+            let startTimeMs = performance.now();
+            
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                const results = gestureRecognizer.recognizeForVideo(video, startTimeMs);
+
+                canvasCtx.save();
+                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+                if (results.landmarks && results.landmarks.length > 0) {
+                    const drawingUtils = new DrawingUtils(canvasCtx);
+                    for (const landmarks of results.landmarks) {
+                        drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, { color: "#10b981", lineWidth: 4 });
+                        drawingUtils.drawLandmarks(landmarks, { color: "#ffffff", lineWidth: 2, radius: 3 });
+                    }
+                }
+
+                // Логика Букв
+                if (results.landmarks && results.landmarks.length > 0) {
+                    let gestureName = "None";
+                    let score = 0;
+
+                    // Custom override
+                    const custom = getCustomGesture(results.landmarks[0]);
+                    if (custom) {
+                        gestureName = custom;
+                        score = 1.0;
+                    } else if (results.gestures && results.gestures.length > 0) {
+                        gestureName = results.gestures[0][0].categoryName;
+                        score = results.gestures[0][0].score;
+                    }
+
+                    if (score > 0.65 && LETTER_MAP[gestureName]) {
+                        currentLetterUI.innerText = LETTER_MAP[gestureName]; // Preview
+                        if (gestureName !== currentGesture) {
+                            currentGesture = gestureName;
+                            gestureStartTime = startTimeMs;
+                        } else {
+                            // Hold for 1 second to confirm letter
+                            if (startTimeMs - gestureStartTime > 1000) { 
+                                if (lastTriggeredGesture !== gestureName) {
+                                    lastTriggeredGesture = gestureName;
+                                    triggerLetter(LETTER_MAP[gestureName]);
+                                    
+                                    // Cooldown 1.5s
+                                    setTimeout(() => {
+                                        if (lastTriggeredGesture === gestureName) {
+                                            lastTriggeredGesture = "None";
+                                            currentGesture = "None";
+                                        }
+                                    }, 1500);
+                                }
+                            }
+                        }
+                    } else {
+                        currentGesture = "None";
+                        if (lastTriggeredGesture === "None") currentLetterUI.innerText = "-";
+                    }
+                } else {
+                    currentGesture = "None";
+                    if (lastTriggeredGesture === "None") currentLetterUI.innerText = "-";
+                }
+                canvasCtx.restore();
+            }
+            if (webcamRunning) window.requestAnimationFrame(predictWebcam);
+        }
+
+        init();
+    </script>
+</body>
+</html>
