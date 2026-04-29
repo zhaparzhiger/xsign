@@ -397,7 +397,11 @@
             "Victory": { chat: "Мир", voice: "Всё будет хорошо.", anim: "Jump" },
             "ILoveYou": { chat: "Инклюзия", voice: "Мы за инклюзивную среду.", anim: "Dance" },
             "Closed_Fist": { chat: "Стоп", voice: "Подождите, стоп.", anim: "Idle" },
-            "Pointing_Up": { chat: "Внимание", voice: "Обратите внимание.", anim: "Idle" }
+            "Pointing_Up": { chat: "Внимание", voice: "Обратите внимание.", anim: "Idle" },
+            "You": { chat: "Ты", voice: "Именно ты.", anim: "Idle" },
+            "Me": { chat: "Я", voice: "Это я.", anim: "Idle" },
+            "Want": { chat: "Хочу", voice: "Я хочу это.", anim: "Idle" },
+            "House": { chat: "Дом", voice: "Мой дом.", anim: "Idle" }
         };
 
         // Manual Backup Overrides
@@ -407,7 +411,11 @@
             "3": "Thumb_Down",
             "4": "Thumb_Up",
             "5": "Closed_Fist",
-            "6": "Pointing_Up"
+            "6": "Pointing_Up",
+            "7": "You",
+            "8": "Me",
+            "9": "Want",
+            "0": "House"
         };
 
         // State
@@ -424,7 +432,8 @@
             const wrist = landmarks[0];
             const tip = landmarks[tipIdx];
             const pip = landmarks[pipIdx];
-            return getDistance(wrist, tip) > getDistance(wrist, pip) * 1.2;
+            // Сниженный коэффициент для большей надежности распознавания вытянутых пальцев
+            return getDistance(wrist, tip) > getDistance(wrist, pip) * 1.05;
         }
 
         function getCustomGesture(landmarks) {
@@ -433,15 +442,35 @@
             const thumbTip = landmarks[4];
             const indexTip = landmarks[8];
             
-            // "OK" Sign
             const okDist = getDistance(thumbTip, indexTip);
+            const indexExt = isFingerExtended(landmarks, 8, 6);
             const middleExt = isFingerExtended(landmarks, 12, 10);
             const ringExt = isFingerExtended(landmarks, 16, 14);
             const pinkyExt = isFingerExtended(landmarks, 20, 18);
 
-            // Thumb and index touching, other 3 extended
+            // "OK" Sign: Thumb and index touching, other 3 extended
             if (okDist < 0.08 && middleExt && ringExt && pinkyExt) {
                 return "OK_Sign";
+            }
+
+            // "Pointing" logic
+            if (indexExt && !middleExt && !ringExt && !pinkyExt) {
+                const yDiff = landmarks[5].y - landmarks[8].y; // > 0 means pointing UP
+                const zDiff = landmarks[8].z - landmarks[5].z; // > 0 means pointing to SELF
+
+                if (zDiff < -0.04) {
+                    return "You"; // Четко в камеру
+                } 
+                if (zDiff > 0.04) {
+                    return "Me"; // Четко на себя
+                }
+                
+                // Если нет явного направления по глубине, смотрим вверх ли
+                if (yDiff > 0.05) {
+                    return "Pointing_Up";
+                }
+                
+                return "Pointing_Up"; // Fallback
             }
 
             return null;
@@ -449,12 +478,28 @@
 
         // Web Speech API (Text-to-Speech)
         const synth = window.speechSynthesis;
+        let maleVoice = null;
+
+        function loadVoices() {
+            const voices = synth.getVoices();
+            // Ищем явно мужской русский голос (Pavel) или просто русский
+            maleVoice = voices.find(v => v.lang.includes('ru') && (v.name.toLowerCase().includes('pavel') || v.name.toLowerCase().includes('male'))) 
+                        || voices.find(v => v.lang.includes('ru'));
+        }
+        synth.onvoiceschanged = loadVoices;
+
         function speak(text) {
-            if (synth.speaking) synth.cancel(); // Stop current speech if any
+            if (synth.speaking) synth.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = "ru-RU";
+            
+            if (!maleVoice) loadVoices();
+            if (maleVoice) utterance.voice = maleVoice;
+            
+            // Снижаем тон для имитации мужского голоса, если не найден конкретный Pavel
+            utterance.pitch = (maleVoice && maleVoice.name.toLowerCase().includes('pavel')) ? 1.0 : 0.6;
             utterance.rate = 1.0;
-            utterance.pitch = 1.0;
+            
             synth.speak(utterance);
         }
 
@@ -526,13 +571,46 @@
                     let gestureName = "None";
                     let score = 0;
 
-                    // 1. Try Custom Heuristics on any hand
-                    for (let i = 0; i < results.landmarks.length; i++) {
-                        const custom = getCustomGesture(results.landmarks[i]);
-                        if (custom) {
-                            gestureName = custom;
+                    // 0. Try 2-Hand Gestures
+                    if (results.landmarks.length === 2) {
+                        const h1 = results.landmarks[0];
+                        const h2 = results.landmarks[1];
+                        const indexTipDist = getDistance(h1[8], h2[8]);
+                        const wristDist = getDistance(h1[0], h2[0]);
+                        
+                        // House (Дом) - Index tips touching, wrists apart
+                        if (indexTipDist < 0.08 && wristDist > 0.15 && isFingerExtended(h1, 8, 6) && isFingerExtended(h2, 8, 6)) {
+                            gestureName = "House";
                             score = 1.0;
-                            break;
+                        }
+                        
+                        // Want (Хочу) - Обе руки в кадре, проверяем дефолтную модель или кастомно открытые ладони
+                        let bothOpenPalm = false;
+                        if (results.gestures && results.gestures.length === 2) {
+                            if (results.gestures[0][0].categoryName === "Open_Palm" && 
+                                results.gestures[1][0].categoryName === "Open_Palm") {
+                                bothOpenPalm = true;
+                            }
+                        }
+                        
+                        const h1Relaxed = isFingerExtended(h1, 8, 6) && isFingerExtended(h1, 20, 18);
+                        const h2Relaxed = isFingerExtended(h2, 8, 6) && isFingerExtended(h2, 20, 18);
+
+                        if (gestureName === "None" && (bothOpenPalm || (h1Relaxed && h2Relaxed))) {
+                            gestureName = "Want";
+                            score = 1.0;
+                        }
+                    }
+
+                    // 1. Try Custom Heuristics on any hand
+                    if (gestureName === "None") {
+                        for (let i = 0; i < results.landmarks.length; i++) {
+                            const custom = getCustomGesture(results.landmarks[i]);
+                            if (custom) {
+                                gestureName = custom;
+                                score = 1.0;
+                                break;
+                            }
                         }
                     }
 
